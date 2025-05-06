@@ -1,0 +1,47 @@
+version: '3.9'
+
+services:
+  app:
+    build: .
+    container_name: todo_app
+    ports:
+      - '3011:3000'
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      - PORT=3000
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASSWORD=secret
+      - DB_NAME=todo_db
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - .:/app
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: todo_db
+    ports:
+      - '3316:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  redis:
+    image: redis/redis-stack:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+      - "8011:8001"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mysql_data:
+  redis_data:
