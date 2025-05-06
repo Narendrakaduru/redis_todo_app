@@ -2,11 +2,22 @@ const express = require('express');
 const mysql = require('mysql2');
 const bodyParser = require('body-parser');
 require('dotenv').config();
+const cors = require('cors');
 const { getCache, setCache, clearCache } = require('./redis/cache');
+
+
+const corsOptions = {
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
 // MySQL connection
@@ -121,6 +132,27 @@ app.put('/todos/:id', (req, res) => {
 app.delete('/todos/cache', async (req, res) => {
   await clearCache('todos');
   res.send('🧹 Cache cleared');
+});
+
+// DELETE /todos/:id
+app.delete('/todos/:id', (req, res) => {
+  const { id } = req.params;
+
+  const query = 'DELETE FROM todo WHERE id = ?';
+  
+  db.query(query, [id], async (err, result) => {
+    if (err) {
+      console.error('❌ Delete error:', err.message);
+      return res.status(500).json({ error: 'Delete failed' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Todo not found' });
+    }
+
+    await clearCache('todos'); // Invalidate cache
+    res.json({ message: 'Todo deleted' });
+  });
 });
 
 // Start server
