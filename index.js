@@ -1,10 +1,13 @@
 const express = require('express');
 const mysql = require('mysql2');
+const bodyParser = require('body-parser');
 require('dotenv').config();
 const { getCache, setCache, clearCache } = require('./redis/cache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(bodyParser.json());
 
 // MySQL connection
 const db = mysql.createConnection({
@@ -14,7 +17,6 @@ const db = mysql.createConnection({
   database: process.env.DB_NAME
 });
 
-// Connect to MySQL
 db.connect((err) => {
   if (err) {
     console.error('❌ MySQL connection error:', err.message);
@@ -27,11 +29,11 @@ db.connect((err) => {
 app.get('/', (req, res) => {
   res.send(`
     <h2>✅ Todo API is running</h2>
-    <p>Access it here: <a href="/todos">/todos</a></p>
+    <p>View todos: <a href="/todos">/todos</a></p>
   `);
 });
 
-// /todos route with Redis cache
+// GET /todos
 app.get('/todos', async (req, res) => {
   try {
     const cached = await getCache('todos');
@@ -56,7 +58,66 @@ app.get('/todos', async (req, res) => {
   }
 });
 
-// Optional: clear Redis cache manually
+// POST /todos
+app.post('/todos', (req, res) => {
+  const { userId, id, title, completed } = req.body;
+
+  if (!userId || !id || !title || completed === undefined) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const query = 'INSERT INTO todo (userId, id, title, completed) VALUES (?, ?, ?, ?)';
+  db.query(query, [userId, id, title, completed], async (err, result) => {
+    if (err) {
+      console.error('❌ Insert error:', err.message);
+      return res.status(500).json({ error: 'Insert failed' });
+    }
+    await clearCache('todos'); // Invalidate cache
+    res.status(201).json({ message: 'Todo created', id });
+  });
+});
+
+// PUT /todos/:id
+app.put('/todos/:id', (req, res) => {
+  const { id } = req.params;
+  const { title, completed } = req.body;
+
+  if (title === undefined && completed === undefined) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  const fields = [];
+  const values = [];
+
+  if (title !== undefined) {
+    fields.push('title = ?');
+    values.push(title);
+  }
+
+  if (completed !== undefined) {
+    fields.push('completed = ?');
+    values.push(completed);
+  }
+
+  values.push(id);
+  const query = `UPDATE todo SET ${fields.join(', ')} WHERE id = ?`;
+
+  db.query(query, values, async (err, result) => {
+    if (err) {
+      console.error('❌ Update error:', err.message);
+      return res.status(500).json({ error: 'Update failed' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Todo not found' });
+    }
+
+    await clearCache('todos');
+    res.json({ message: 'Todo updated' });
+  });
+});
+
+// DELETE /todos/cache
 app.delete('/todos/cache', async (req, res) => {
   await clearCache('todos');
   res.send('🧹 Cache cleared');
